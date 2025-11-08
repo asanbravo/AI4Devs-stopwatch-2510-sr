@@ -1,13 +1,306 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Timer and Countdown</title>
-<link rel="stylesheet" href="styles.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrono-Wizard: The Timer That's (Probably) Not Magic</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Simple CSS for the flashing alarm */
+        @keyframes flash {
+            0%, 100% { background-color: rgba(255, 255, 255, 0.9); }
+            50% { background-color: rgba(255, 0, 0, 0.9); }
+        }
+        .alarm-flash {
+            animation: flash 0.5s 6; /* Flash 6 times */
+        }
+
+        /* Tooltip Styles */
+        .tooltip-container {
+            position: relative;
+        }
+        .tooltip-text {
+            visibility: hidden;
+            width: 160px;
+            background-color: #1f2937; /* bg-gray-800 */
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 10;
+            bottom: 125%; /* Position above the button */
+            left: 50%;
+            margin-left: -80px; /* Center the tooltip */
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.875rem; /* text-sm */
+            pointer-events: none; /* So it doesn't block the button */
+        }
+        /* Show tooltip only when button is disabled */
+        .tooltip-container button:disabled:hover + .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* ------- Modern quantity input pill (hours / minutes / seconds) ------- */
+        .quantity-input-group {
+            display: inline-flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.35rem 0.75rem;
+            gap: 0.75rem;
+            min-width: 7.5rem;
+            height: 3rem;
+            border-radius: 9999px;
+            background: radial-gradient(circle at 0% 0%, #111827, #020617);
+            box-shadow:
+                0 18px 35px rgba(0, 0, 0, 0.65),
+                0 0 0 1px rgba(45, 212, 191, 0.45);
+        }
+
+        .q-btn {
+            border: none;
+            border-radius: 9999px;
+            width: 2.25rem;
+            height: 2.25rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            font-weight: 300;
+            color: #e0f2fe;
+            background: linear-gradient(145deg, #0f172a, #1e293b);
+            cursor: pointer;
+            transition:
+                background 0.15s ease,
+                transform 0.06s ease,
+                box-shadow 0.15s ease,
+                color 0.15s ease;
+            box-shadow: 0 8px 18px rgba(15, 23, 42, 0.9);
+        }
+
+        .q-btn:hover:not(:disabled) {
+            background: linear-gradient(145deg, #0284c7, #0ea5e9);
+            color: #f9fafb;
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px rgba(8, 47, 73, 0.95);
+        }
+
+        .q-btn:active:not(:disabled) {
+            transform: translateY(1px) scale(0.97);
+            box-shadow: 0 4px 10px rgba(15, 23, 42, 0.9);
+        }
+
+        .q-btn:focus-visible {
+            outline: 2px solid #22d3ee;
+            outline-offset: 2px;
+        }
+
+        .q-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .q-display {
+            flex: 1;
+            text-align: center;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 1.6rem;
+            letter-spacing: 0.03em;
+            color: #e5e7eb;
+        }
+    </style>
 </head>
-<body>
-<h1>Timer and Countdown</h1>
+<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4 font-sans">
+
+<div class="w-full max-w-4xl min-h-[500px] bg-gray-800 rounded-2xl shadow-2xl p-6 md:p-10">
+
+    <header class="text-center mb-6 border-b border-gray-700 pb-6">
+        <h1 class="text-3xl md:text-4xl font-bold text-cyan-400">Chrono-Wizard ⏱️</h1>
+        <p class="text-lg text-gray-400 mt-2">
+            Use our wizardry to count up or count down. Perfect for timing your naps, your noodles, or how long you can hold your breath.
+        </p>
+    </header>
+
+    <nav class="flex justify-center mb-8 space-x-2">
+        <button id="tab-stopwatch" class="tab-btn active-tab text-xl font-semibold py-3 px-6 rounded-t-lg transition-all" data-view="stopwatch">
+            Stopwatch
+        </button>
+        <button id="tab-countdown" class="tab-btn inactive-tab text-xl font-semibold py-3 px-6 rounded-t-lg transition-all" data-view="countdown">
+            Countdown
+        </button>
+    </nav>
+
+    <main>
+        <section id="view-stopwatch" class="view-content flex flex-col items-center">
+            <div class="w-full bg-gray-900 rounded-lg p-6 shadow-inner mb-8">
+                <h2 id="stopwatch-display" class="text-6xl md:text-8xl lg:text-9xl text-center font-mono tracking-tighter">
+                    <span>00</span>:<span>00</span>:<span>00</span><span class="text-4xl md:text-6xl lg:text-7xl text-gray-500">.000</span>
+                </h2>
+            </div>
+
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-4 w-full max-w-lg mb-8">
+                <button id="stopwatch-start-stop" class="btn btn-green col-span-2 md:col-span-1">Start</button>
+                <button id="stopwatch-lap" class="btn btn-blue" disabled>Lap</button>
+                <div class="tooltip-container">
+                    <button id="stopwatch-reset" class="btn btn-red w-full" disabled>Reset</button>
+                    <span class="tooltip-text">Stop the timer to reset</span>
+                </div>
+            </div>
+
+            <div id="stopwatch-laps-container" class="w-full max-w-lg bg-gray-900 rounded-lg shadow-inner p-4 h-48 overflow-y-auto hidden">
+                <ol id="stopwatch-laps-list" class="list-decimal list-inside text-lg font-mono text-gray-300 space-y-2">
+                </ol>
+            </div>
+        </section>
+
+        <section id="view-countdown" class="view-content flex flex-col items-center hidden">
+
+            <div id="countdown-inputs" class="w-full max-w-lg flex flex-col items-center">
+                <div class="grid grid-cols-3 gap-6 w-full mb-6">
+
+                    <div class="text-center">
+                        <label for="cd-hours-value" class="block text-sm font-medium text-gray-400 mb-2">Hours</label>
+                        <div class="quantity-input-group" role="group" aria-label="Set hours">
+                            <button
+                                    type="button"
+                                    class="q-btn q-btn-minus"
+                                    data-target="cd-hours-value"
+                                    data-unit="hours"
+                                    aria-label="Decrease hours">
+                                –
+                            </button>
+                            <span id="cd-hours-value" class="q-display" aria-live="polite">0</span>
+                            <button
+                                    type="button"
+                                    class="q-btn q-btn-plus"
+                                    data-target="cd-hours-value"
+                                    data-unit="hours"
+                                    aria-label="Increase hours">
+                                +
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="text-center">
+                        <label for="cd-minutes-value" class="block text-sm font-medium text-gray-400 mb-2">Minutes</label>
+                        <div class="quantity-input-group" role="group" aria-label="Set minutes">
+                            <button
+                                    type="button"
+                                    class="q-btn q-btn-minus"
+                                    data-target="cd-minutes-value"
+                                    data-unit="minutes"
+                                    aria-label="Decrease minutes">
+                                –
+                            </button>
+                            <span id="cd-minutes-value" class="q-display" aria-live="polite">8</span>
+                            <button
+                                    type="button"
+                                    class="q-btn q-btn-plus"
+                                    data-target="cd-minutes-value"
+                                    data-unit="minutes"
+                                    aria-label="Increase minutes">
+                                +
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="text-center">
+                        <label for="cd-seconds-value" class="block text-sm font-medium text-gray-400 mb-2">Seconds</label>
+                        <div class="quantity-input-group" role="group" aria-label="Set seconds">
+                            <button
+                                    type="button"
+                                    class="q-btn q-btn-minus"
+                                    data-target="cd-seconds-value"
+                                    data-unit="seconds"
+                                    aria-label="Decrease seconds">
+                                –
+                            </button>
+                            <span id="cd-seconds-value" class="q-display" aria-live="polite">0</span>
+                            <button
+                                    type="button"
+                                    class="q-btn q-btn-plus"
+                                    data-target="cd-seconds-value"
+                                    data-unit="seconds"
+                                    aria-label="Increase seconds">
+                                +
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+                <button id="countdown-set" class="btn btn-green w-full">Set</button>
+            </div>
+
+            <div id="countdown-timer" class="w-full flex-col items-center hidden">
+                <div class="w-full bg-gray-900 rounded-lg p-6 shadow-inner mb-8">
+                    <h2 id="countdown-display" class="text-6xl md:text-8xl lg:text-9xl text-center font-mono tracking-tighter">
+                        00:08:00
+                    </h2>
+                </div>
+                <div class="grid grid-cols-2 gap-4 w-full max-w-lg">
+                    <button id="countdown-start-stop" class="btn btn-green">Start</button>
+                    <div class="tooltip-container">
+                        <button id="countdown-reset" class="btn btn-red w-full">Reset</button>
+                        <span class="tooltip-text">Stop the timer to reset</span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+</div>
+
+<div id="alarm-overlay" class="fixed inset-0 z-50 hidden"></div>
+
+
+<script>
+    tailwind.config = {
+        theme: {
+            extend: {
+                colors: {
+                    // Custom colors can be added here
+                }
+            }
+        }
+    }
+    // This dynamically adds our custom component styles to Tailwind's base
+    const style = document.createElement('style');
+    style.textContent = `
+        @tailwind base;
+        @tailwind components;
+        @tailwind utilities;
+
+        @layer components {
+            .btn {
+                @apply text-white text-xl md:text-2xl font-bold py-4 px-6 rounded-lg shadow-md transition-all duration-150 focus:outline-none focus:ring-4;
+            }
+            .btn-green {
+                @apply bg-green-600 hover:bg-green-700 focus:ring-green-500;
+            }
+            .btn-red {
+                @apply bg-red-600 hover:bg-red-700 focus:ring-red-500;
+            }
+            .btn-blue {
+                @apply bg-blue-600 hover:bg-blue-700 focus:ring-blue-500;
+            }
+            .btn:disabled {
+                @apply opacity-50 cursor-not-allowed bg-gray-600;
+            }
+
+            .tab-btn.active-tab {
+                @apply bg-gray-800 text-cyan-400;
+            }
+            .tab-btn.inactive-tab {
+                @apply bg-gray-700 text-gray-400 hover:bg-gray-600;
+            }
+        }
+    `;
+    document.head.appendChild(style);
+</script>
+
 <script src="script.js"></script>
 </body>
 </html>
